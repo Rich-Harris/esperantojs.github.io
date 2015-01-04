@@ -1,10 +1,10 @@
 var gobble = require( 'gobble' ),
-	src, index, app, bundle, css, data, lib, vendor;
+	src, root, app, bundle, css, data, lib, vendor;
 
 gobble.cwd( __dirname );
 src = gobble( 'src' );
 
-index = src.include( 'index.html' );
+root = gobble( 'src/root' );
 app = gobble( 'src/ractive_components' ).map( 'ractive' );
 bundle = gobble( 'src/bundle' ).transform( 'concat', { files: '**/*.js', dest: 'bundle.js' });
 css = gobble( 'src/scss' ).transform( 'sass', { src: 'main.scss', dest: 'min.css' });
@@ -36,4 +36,4 @@ if ( gobble.isBuild ) {
 	lib = lib.map( 'uglifyjs' );
 }
 
-module.exports = gobble([ index, app, bundle, css, lib, 'src/files' ]);
+module.exports = gobble([ root, app, bundle, css, lib, 'src/files' ]);
