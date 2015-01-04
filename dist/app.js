@@ -12619,8 +12619,8 @@ _data_ = {
       name: 'Default import\n'
     },
     {
-      name: 'Named exports\n',
-      code: '// example from http://jsmodules.io\nvar asap;\nvar isNode = typeof process !== "undefined" &&\n             {}.toString.call(process) === "[object process]";\n\nif (isNode) {\n  asap = process.nextTick;\n} else if (typeof setImmediate !== "undefined") {\n  asap = setImmediate;\n} else {\n  asap = setTimeout;\n}\n\nexport default asap;\nexport var later = isNode ? process.setImmediate : asap;\n'
+      code: '// example from http://jsmodules.io\nvar asap;\nvar isNode = typeof process !== "undefined" &&\n             {}.toString.call(process) === "[object process]";\n\nif (isNode) {\n  asap = process.nextTick;\n} else if (typeof setImmediate !== "undefined") {\n  asap = setImmediate;\n} else {\n  asap = setTimeout;\n}\n\nexport default asap;\nexport var later = isNode ? process.setImmediate : asap;\n',
+      name: 'Named exports\n'
     },
     {
       code: '// example from http://jsmodules.io\nimport { later } from "asap";\n\nlater(function() {\n  console.log("Running after other network events");\n});\n',
@@ -12829,7 +12829,7 @@ app = function (__import0__, __import1__, require, Ractive) {
                           {
                             t: 7,
                             e: 'a',
-                            a: { href: 'https://github.com/Rich-Harris/esperanto/wiki/Strict-mode' },
+                            a: { href: 'https://github.com/esperantojs/esperanto/wiki/Strict-mode' },
                             f: ['strict mode']
                           }
                         ]
