@@ -8,6 +8,15 @@
 }
 
 @font-face{
+	font-family: 'Questrial';
+	src: url('fonts/Questrial/Questrial.eot');
+	src: url('fonts/Questrial/Questrial.eot?#iefix') format('embedded-opentype'),
+	     url('fonts/Questrial/Questrial.woff') format('woff'),
+	     url('fonts/Questrial/Questrial.ttf') format('truetype'),
+	     url('fonts/Questrial/Questrial.svg#webfont') format('svg');
+}
+
+@font-face{
 	font-family: 'Source Sans Pro';
 	src: url('fonts/Source_Sans_Pro/SourceSansPro-Regular.ttf') format('truetype');
 }
@@ -36,21 +45,36 @@
 }
 
 body {
-	font-family: 'Source Sans Pro';
+	font-family: 'Questrial';
 	color: #555;
 	line-height: 1.5;
 	-webkit-font-smoothing: antialiased;
 }
 
 h1, h2 {
-	font-family: 'Voltaire';
+	font-family: 'Questrial';
 	margin: 0;
 	font-weight: normal;
 	color: #222;
 }
 
+h1 {
+	color: #17AF4B;
+}
+
+.star {
+	position: relative;
+	display: inline-block;
+	width: 0.8em;
+	height: 0.8em;
+	top: 0.28em;
+	background: url(star.svg) no-repeat 50% 50%;
+	background-size: 100% 100%;
+	color: transparent;
+}
+
 h3, h4, h5, h6 {
-	font-family: 'Source Sans Pro';
+	font-family: 'Questrial';
 	font-weight: 500;
 	margin: 0 0 0.5em 0;
 	color: #222;
@@ -61,7 +85,8 @@ p {
 }
 
 a {
-	color: rgb(200,60,60);
+	//color: rgb(200,60,60);
+	color: #0F803F;
 	text-decoration: none;
 }
 
