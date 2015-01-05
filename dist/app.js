@@ -12829,7 +12829,10 @@ app = function (__import0__, __import1__, require, Ractive) {
                           {
                             t: 7,
                             e: 'a',
-                            a: { href: 'https://github.com/esperantojs/esperanto/wiki/Strict-mode' },
+                            a: {
+                              target: '_blank',
+                              href: 'https://github.com/esperantojs/esperanto/wiki/Strict-mode'
+                            },
                             f: ['strict mode']
                           }
                         ]
