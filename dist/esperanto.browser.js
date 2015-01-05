@@ -615,7 +615,7 @@
 		return 'global.' + name;
 	}
 
-	var amd__introTemplate = template( 'define(<%= paths %>function (<%= names %>) {\n\n' );
+	var amd__introTemplate = template( 'define(<%= amdName %><%= paths %>function (<%= names %>) {\n\n' );
 
 	function amd__amd ( mod, body, options ) {
 		var importNames = [],
@@ -640,6 +640,7 @@
 		transformExportDeclaration( mod.exports[0], body );
 
 		intro = amd__introTemplate({
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			paths: importPaths.length ? '[' + importPaths.map( quote ).join( ', ' ) + '], ' : '',
 			names: importNames.join( ', ' )
 		});
@@ -724,6 +725,7 @@
 			amdDeps: importPaths.length ? '[' + importPaths.map( quote ).join( ', ' ) + '], ' : '',
 			cjsDeps: importPaths.map( req ).join( ', ' ),
 			globals: importNames.map( globalify ).join( ', ' ),
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			names: importNames.join( ', ' ),
 			name: options.name
 		}).replace( /\t/g, body.indentStr );
@@ -744,7 +746,7 @@
 \n\
 \n	if (typeof define === 'function' && define.amd) {\
 \n		// export as AMD\
-\n		define(<%= amdDeps %>factory);\
+\n		define(<%= amdName %><%= amdDeps %>factory);\
 \n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
 \n		// node/browserify\
 \n		module.exports = factory(<%= cjsDeps %>);\
@@ -1033,7 +1035,10 @@
 						body.insert( x.end, (("\nexports['default'] = " + (x.name)) + ";") );
 					} else {
 						// export function answer () { return 42; }
-						shouldExportEarly[ x.name ] = true; // TODO what about `function foo () {}; export { foo }`?
+						if ( x.type === 'namedFunction' ) {
+							shouldExportEarly[ x.name ] = true;
+						}
+
 						body.remove( x.start, x.valueStart );
 					}
 					return;
@@ -1101,7 +1106,7 @@
 
 	var strictMode_amd__introTemplate;
 
-	strictMode_amd__introTemplate = template( 'define(<%= paths %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
+	strictMode_amd__introTemplate = template( 'define(<%= amdName %><%= paths %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
 
 	function strictMode_amd__amd ( mod, body, options ) {var $D$2;
 		var importPaths,
@@ -1119,6 +1124,7 @@
 		}
 
 		intro = strictMode_amd__introTemplate({
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			paths: importPaths.length ? '[' + importPaths.map( quote ).join( ', ' ) + '], ' : '',
 			names: importNames.join( ', ' )
 		}).replace( /\t/g, body.indentStr );
@@ -1179,6 +1185,7 @@
 			amdDeps: [ 'exports' ].concat( importPaths ).map( quote ).join( ', ' ),
 			cjsDeps: [ 'exports' ].concat( importPaths.map( req ) ).join( ', ' ),
 			globals: [ ("global." + (options.name)) ].concat( importNames.map( globalify ) ).join( ', ' ),
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			names: [ 'exports' ].concat( importNames ).join( ', ' ),
 			name: options.name
 		}).replace( /\t/g, body.indentStr );
@@ -1197,7 +1204,7 @@
 \n\
 \n	if (typeof define === 'function' && define.amd) {\
 \n		// export as AMD\
-\n		define([<%= amdDeps %>], factory);\
+\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
 \n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
 \n		// node/browserify\
 \n		factory(<%= cjsDeps %>);\
@@ -1225,7 +1232,7 @@
 		strictMode: strictMode
 	};
 
-	var defaultsMode_amd__introTemplate = template( 'define(<%= amdDeps %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
+	var defaultsMode_amd__introTemplate = template( 'define(<%= amdName %><%= amdDeps %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
 
 	function defaultsMode_amd__amd ( bundle, body, options ) {
 		var intro,
@@ -1239,6 +1246,7 @@
 		}
 
 		intro = defaultsMode_amd__introTemplate({
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			amdDeps: bundle.externalModules.length ? '[' + bundle.externalModules.map( quoteId ).join( ', ' ) + '], ' : '',
 			names: bundle.externalModules.map( function(m ) {return bundle.uniqueNames[ m.id ] + '__default'} ).join( ', ' )
 		}).replace( /\t/g, indentStr );
@@ -1310,6 +1318,7 @@
 			amdDeps: amdDeps,
 			cjsDeps: cjsDeps,
 			globals: globals,
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			name: options.name,
 			names: externalModuleIds.map( function(id ) {return bundle.uniqueNames[ id ] + '__default'} ).join( ', ' )
 		}).replace( /\t/g, indentStr );
@@ -1324,7 +1333,7 @@
 \n\
 \n	if (typeof define === 'function' && define.amd) {\
 \n		// export as AMD\
-\n		define([<%= amdDeps %>], factory);\
+\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
 \n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
 \n		// node/browserify\
 \n		module.exports = factory(<%= cjsDeps %>);\
@@ -1380,6 +1389,7 @@
 		}
 
 		intro = builders_strictMode_amd__introTemplate({
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			amdDeps: importIds.length ? '[' + importIds.map( quote ).join( ', ' ) + '], ' : '',
 			names: importNames.join( ', ' )
 		}).replace( /\t/g, indentStr );
@@ -1388,7 +1398,7 @@
 		return packageResult( body, options, 'toAmd', true );
 	}
 
-	builders_strictMode_amd__introTemplate = template( 'define(<%= amdDeps %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
+	builders_strictMode_amd__introTemplate = template( 'define(<%= amdName %><%= amdDeps %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
 
 	function builders_strictMode_cjs__cjs ( bundle, body, options ) {
 		var importBlock,
@@ -1471,6 +1481,7 @@
 			amdDeps: amdDeps,
 			cjsDeps: cjsDeps,
 			globals: globals,
+			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
 			names: names,
 			name: options.name
 		}).replace( /\t/g, indentStr );
@@ -1485,7 +1496,7 @@
 \n\
 \n	if (typeof define === 'function' && define.amd) {\
 \n		// export as AMD\
-\n		define([<%= amdDeps %>], factory);\
+\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
 \n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
 \n		// node/browserify\
 \n		factory(<%= cjsDeps %>);\
