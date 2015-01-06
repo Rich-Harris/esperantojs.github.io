@@ -53,7 +53,7 @@
 	};
 
 	function annotateAst ( ast ) {
-		var scope = new Scope(), blockScope = new Scope(), declared = {}, templateLiteralRanges = [];
+		var scope = new Scope(), blockScope = new Scope(), declared = {}, topLevelFunctionNames = [], templateLiteralRanges = [];
 
 		estraverse__default.traverse( ast, {
 			enter: function ( node ) {
@@ -70,6 +70,12 @@
 					case 'FunctionDeclaration':
 						if ( node.id ) {
 							addToScope( node );
+
+							// If this is the root scope, this may need to be
+							// exported early, so we make a note of it
+							if ( !scope.parent ) {
+								topLevelFunctionNames.push( node.id.name );
+							}
 						}
 
 						scope = node._scope = new Scope({
@@ -139,6 +145,7 @@
 		ast._scope = scope;
 		ast._blockScope = blockScope;
 		ast._topLevelNames = ast._scope.names.concat( ast._blockScope.names );
+		ast._topLevelFunctionNames = topLevelFunctionNames;
 		ast._declared = declared;
 		ast._templateLiteralRanges = templateLiteralRanges;
 	}
@@ -693,7 +700,39 @@
 		return packageResult( body, options, 'toCjs' );
 	}
 
-	var umd__introTemplate;
+	function defaultUmdIntro ( options, indentStr ) {
+		var intro, amdName, needsGlobal, amdDeps, cjsDeps, globalDeps, args, cjsDefine, globalDefine, nonAMDDefine;
+
+		amdName     = options.amdName ? (("'" + (options.amdName)) + "', ") : '';
+		needsGlobal = options.hasImports || options.hasExports;
+
+		amdDeps     = options.importPaths.map( quote ).join( ', ' );
+		cjsDeps     = options.importPaths.map( req ).join( ', ' );
+		globalDeps  = options.importNames.map( globalify ).join( ', ' );
+		
+		args        = ( options.args || options.importNames ).join( ', ' );
+
+		cjsDefine = options.hasExports ?
+			(("module.exports = factory(" + cjsDeps) + ")") :
+			(("factory(" + cjsDeps) + ")");
+
+		globalDefine = options.hasExports ?
+			(("global." + (options.name)) + (" = factory(" + globalDeps) + ")") :
+			(("factory(" + globalDeps) + ")");
+
+		nonAMDDefine = cjsDefine === globalDefine ? globalDefine :
+			(("typeof exports === 'object' ? " + cjsDefine) + (" :\n\t" + globalDefine) + "");
+
+		intro =
+	(("(function (" + (needsGlobal ? 'global, ' : '')) + ("factory) {\
+\n	typeof define === 'function' && define.amd ? define(" + amdName) + ("" + (amdDeps ? '[' + amdDeps + '], ' : '')) + ("factory) :\
+\n	" + nonAMDDefine) + ("\
+\n}(" + (needsGlobal ? 'this, ' : '')) + ("function (" + args) + ") { 'use strict';\
+\n\
+\n").replace( /\t/g, indentStr );
+
+		return intro;
+	}
 
 	function umd__umd ( mod, body, options ) {
 		var importNames = [],
@@ -721,14 +760,16 @@
 
 		transformExportDeclaration( mod.exports[0], body );
 
-		intro = umd__introTemplate({
-			amdDeps: importPaths.length ? '[' + importPaths.map( quote ).join( ', ' ) + '], ' : '',
-			cjsDeps: importPaths.map( req ).join( ', ' ),
-			globals: importNames.map( globalify ).join( ', ' ),
-			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
-			names: importNames.join( ', ' ),
+		intro = defaultUmdIntro({
+			hasImports: mod.imports.length > 0,
+			hasExports: mod.exports.length > 0,
+
+			importPaths: importPaths,
+			importNames: importNames,
+
+			amdName: options.amdName,
 			name: options.name
-		}).replace( /\t/g, body.indentStr );
+		}, mod.body.indentStr );
 
 		body.trim()
 			.prepend( "'use strict';\n\n" )
@@ -739,25 +780,6 @@
 
 		return packageResult( body, options, 'toUmd' );
 	}
-
-	umd__introTemplate = template( ("(function (global, factory) {\
-\n\
-\n	'use strict';\
-\n\
-\n	if (typeof define === 'function' && define.amd) {\
-\n		// export as AMD\
-\n		define(<%= amdName %><%= amdDeps %>factory);\
-\n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
-\n		// node/browserify\
-\n		module.exports = factory(<%= cjsDeps %>);\
-\n	} else {\
-\n		// browser global\
-\n		global.<%= name %> = factory(<%= globals %>);\
-\n	}\
-\n\
-\n}(typeof window !== 'undefined' ? window : this, function (<%= names %>) {\
-\n\
-\n") );
 
 	var defaultsMode = {
 		amd: amd__amd,
@@ -1035,10 +1057,6 @@
 						body.insert( x.end, (("\nexports['default'] = " + (x.name)) + ";") );
 					} else {
 						// export function answer () { return 42; }
-						if ( x.type === 'namedFunction' ) {
-							shouldExportEarly[ x.name ] = true;
-						}
-
 						body.remove( x.start, x.valueStart );
 					}
 					return;
@@ -1068,7 +1086,9 @@
 			if ( chains.hasOwnProperty( name ) ) {
 				// special case - a binding from another module
 				earlyExports.push( (("Object.defineProperty(exports, '" + exportAs) + ("', { get: function () { return " + (chains[name])) + "; }});") );
-			} else if ( shouldExportEarly.hasOwnProperty( name ) ) {
+			} else if ( ~mod.ast._topLevelFunctionNames.indexOf( name ) ) {
+				// functions should be exported early, in
+				// case of cyclic dependencies
 				earlyExports.push( (("exports." + exportAs) + (" = " + name) + ";") );
 			} else if ( !alreadyExported.hasOwnProperty( name ) ) {
 				lateExports.push( (("exports." + exportAs) + (" = " + name) + ";") );
@@ -1166,7 +1186,43 @@
 		return packageResult( body, options, 'toCjs' );
 	}
 
-	var strictMode_umd__introTemplate;
+	function strictUmdIntro ( options, indentStr ) {
+		var intro, amdName, needsGlobal, defaultsBlock = '', amdDeps, cjsDeps, globalDeps, args, cjsDefine, globalDefine, nonAMDDefine;
+
+		amdName     = options.amdName ? (("'" + (options.amdName)) + "', ") : '';
+		needsGlobal = options.hasImports || options.hasExports;
+
+		amdDeps     = ( options.hasExports ? [ 'exports' ]    : [] ).concat( options.importPaths ).map( quote ).join( ', ' );
+		cjsDeps     = ( options.hasExports ? [ 'exports' ]    : [] ).concat( options.importPaths.map( req ) ).join( ', ' );
+		globalDeps  = ( options.hasExports ? [ options.name ] : [] ).concat( options.importNames ).map( globalify ).join( ', ' );
+
+		args        = ( options.hasExports ? [ 'exports' ]    : [] ).concat( options.importNames ).join( ', ' );
+
+		if ( options.externalDefaults && options.externalDefaults.length > 0 ) {
+			defaultsBlock = options.externalDefaults.map( function(name )
+				{return (("\tvar " + name) + ("__default = ('default' in " + name) + (" ? " + name) + ("['default'] : " + name) + ");")}
+		).join( '\n' ) + '\n\n';
+		}
+
+		cjsDefine =(("factory(" + cjsDeps) + ")");
+
+		globalDefine = options.hasExports ?
+			(("(global." + (options.name)) + (" = {}, factory(" + globalDeps) + "))") :
+			(("factory(" + globalDeps) + ")");
+
+		nonAMDDefine = cjsDefine === globalDefine ? globalDefine :
+			(("typeof exports === 'object' ? " + cjsDefine) + (" :\n\t" + globalDefine) + "");
+
+		intro =
+	(("(function (" + (needsGlobal ? 'global, ' : '')) + ("factory) {\
+\n	typeof define === 'function' && define.amd ? define(" + amdName) + ("" + (amdDeps ? '[' + amdDeps + '], ' : '')) + ("factory) :\
+\n	" + nonAMDDefine) + ("\
+\n}(" + (needsGlobal ? 'this, ' : '')) + ("function (" + args) + (") { 'use strict';\
+\n\
+\n" + defaultsBlock) + "").replace( /\t/g, indentStr );
+
+		return intro;
+	}
 
 	function strictMode_umd__umd ( mod, body, options ) {var $D$3;
 		var importPaths,
@@ -1181,14 +1237,16 @@
 
 		importPaths = ($D$3 = getImportSummary( mod ))[0], importNames = $D$3[1], $D$3;
 
-		intro = strictMode_umd__introTemplate({
-			amdDeps: [ 'exports' ].concat( importPaths ).map( quote ).join( ', ' ),
-			cjsDeps: [ 'exports' ].concat( importPaths.map( req ) ).join( ', ' ),
-			globals: [ ("global." + (options.name)) ].concat( importNames.map( globalify ) ).join( ', ' ),
-			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
-			names: [ 'exports' ].concat( importNames ).join( ', ' ),
+		intro = strictUmdIntro({
+			hasImports: mod.imports.length > 0,
+			hasExports: mod.exports.length > 0,
+
+			importPaths: importPaths,
+			importNames: importNames,
+
+			amdName: options.amdName,
 			name: options.name
-		}).replace( /\t/g, body.indentStr );
+		}, body.indentStr );
 
 		transformBody( mod, body, {
 			intro: intro,
@@ -1197,28 +1255,6 @@
 
 		return packageResult( body, options, 'toUmd' );
 	;$D$3 = void 0}
-
-	strictMode_umd__introTemplate = template( ("(function (global, factory) {\
-\n\
-\n	'use strict';\
-\n\
-\n	if (typeof define === 'function' && define.amd) {\
-\n		// export as AMD\
-\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
-\n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
-\n		// node/browserify\
-\n		factory(<%= cjsDeps %>);\
-\n	} else {\
-\n		// browser global\
-\n		global.<%= name %> = {};\
-\n		factory(<%= globals %>);\
-\n	}\
-\n\
-\n}(typeof window !== 'undefined' ? window : this, function (<%= names %>) {\
-\n\
-\n	'use strict';\
-\n\
-\n") );
 
 	var strictMode = {
 		amd: strictMode_amd__amd,
@@ -1287,72 +1323,66 @@
 		return packageResult( body, options, 'toCjs', true );
 	}
 
-	var defaultsMode_umd__introTemplate;
-
 	function defaultsMode_umd__umd ( bundle, body, options ) {
-		var externalModuleIds,
-			amdDeps,
-			cjsDeps,
-			globals,
-			intro,
-			indentStr,
-			defaultName;
-
-		indentStr = body.getIndentString();
-
 		if ( !options || !options.name ) {
 			throw new Error( 'You must specify an export name, e.g. `bundle.toUmd({ name: "myModule" })`' );
 		}
 
-		if ( defaultName = bundle.entryModule.identifierReplacements.default ) {
+		var entry = bundle.entryModule;
+		var indentStr = body.getIndentString();
+
+		var importPaths = bundle.externalModules.map( getId );
+		var importNames = importPaths.map( function(path ) {return bundle.uniqueNames[ path ]} );
+
+		var intro = defaultUmdIntro({
+			hasImports: bundle.externalModules.length > 0,
+			hasExports: entry.exports.length > 0,
+
+			importPaths: importPaths,
+			importNames: importNames,
+			args: importNames.map( function(name ) {return name + '__default'} ),
+
+			amdName: options.amdName,
+			name: options.name
+		}, indentStr );
+
+		body.prepend( intro ).trim();
+
+		var defaultName;
+		if ( ( defaultName = entry.identifierReplacements.default ) ) {
 			body.append( (("\n\n" + indentStr) + ("return " + defaultName) + ";") );
 		}
 
-		externalModuleIds = bundle.externalModules.map( getId );
+		body.append('\n\n}));');
 
-		amdDeps = externalModuleIds.map( quote ).join( ', ' );
-		cjsDeps = externalModuleIds.map( req ).join( ', ' );
-		globals = externalModuleIds.map( function(id ) {return 'global.' + bundle.uniqueNames[ id ]} ).join( ', ' );
-
-		intro = defaultsMode_umd__introTemplate({
-			amdDeps: amdDeps,
-			cjsDeps: cjsDeps,
-			globals: globals,
-			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
-			name: options.name,
-			names: externalModuleIds.map( function(id ) {return bundle.uniqueNames[ id ] + '__default'} ).join( ', ' )
-		}).replace( /\t/g, indentStr );
-
-		body.prepend( intro ).trim().append( '\n\n}));' );
 		return packageResult( body, options, 'toUmd', true );
 	}
-
-	defaultsMode_umd__introTemplate = template( ("(function (global, factory) {\
-\n\
-\n	'use strict';\
-\n\
-\n	if (typeof define === 'function' && define.amd) {\
-\n		// export as AMD\
-\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
-\n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
-\n		// node/browserify\
-\n		module.exports = factory(<%= cjsDeps %>);\
-\n	} else {\
-\n		// browser global\
-\n		global.<%= name %> = factory(<%= globals %>);\
-\n	}\
-\n\
-\n}(typeof window !== 'undefined' ? window : this, function (<%= names %>) {\
-\n\
-\n	'use strict';\
-\n\
-\n") );
 
 	var builders_defaultsMode = {
 		amd: defaultsMode_amd__amd,
 		cjs: defaultsMode_cjs__cjs,
 		umd: defaultsMode_umd__umd
 	};
+
+	function getExternalDefaults ( bundle ) {
+		var externalDefaults = [];
+
+		bundle.modules.forEach( function(mod ) {
+			mod.imports.forEach( function(x ) {
+				var name;
+
+				if ( x.isDefault && hasOwnProp.call( bundle.externalModuleLookup, x.id ) ) {
+					name = bundle.uniqueNames[ x.id ];
+
+					if ( !~externalDefaults.indexOf( name ) ) {
+						externalDefaults.push( name );
+					}
+				}
+			});
+		});
+
+		return externalDefaults;
+	}
 
 	function getExportBlock ( entry, indentStr ) {
 		var name = entry.identifierReplacements.default;
@@ -1362,7 +1392,8 @@
 	var builders_strictMode_amd__introTemplate;
 
 	function builders_strictMode_amd__amd ( bundle, body, options ) {
-		var defaultsBlock,
+		var externalDefaults = getExternalDefaults( bundle ),
+			defaultsBlock,
 			entry = bundle.entryModule,
 			importIds = bundle.externalModules.map( getId ),
 			importNames = importIds.map( function(id ) {return bundle.uniqueNames[ id ]} ),
@@ -1371,8 +1402,8 @@
 
 		indentStr = body.getIndentString();
 
-		if ( importNames.length ) {
-			defaultsBlock = importNames.map( function(name ) {
+		if ( externalDefaults.length ) {
+			defaultsBlock = externalDefaults.map( function(name ) {
 				return indentStr + (("var " + name) + ("__default = ('default' in " + name) + (" ? " + name) + ("['default'] : " + name) + ");");
 			}).join( '\n' );
 
@@ -1401,7 +1432,8 @@
 	builders_strictMode_amd__introTemplate = template( 'define(<%= amdName %><%= amdDeps %>function (<%= names %>) {\n\n\t\'use strict\';\n\n' );
 
 	function builders_strictMode_cjs__cjs ( bundle, body, options ) {
-		var importBlock,
+		var externalDefaults = getExternalDefaults( bundle ),
+			importBlock,
 			entry = bundle.entryModule,
 			intro,
 			indentStr;
@@ -1409,10 +1441,14 @@
 		indentStr = body.getIndentString();
 
 		importBlock = bundle.externalModules.map( function(x ) {
-			var name = bundle.uniqueNames[ x.id ];
+			var name = bundle.uniqueNames[ x.id ],
+				statement = (("" + indentStr) + ("var " + name) + (" = require('" + (x.id)) + "');");
 
-			return indentStr + (("var " + name) + (" = require('" + (x.id)) + "');\n") +
-			       indentStr + (("var " + name) + ("__default = ('default' in " + name) + (" ? " + name) + ("['default'] : " + name) + ");");
+			if ( ~externalDefaults.indexOf( name ) ) {
+				statement += (("\n" + indentStr) + ("var " + name) + ("__default = ('default' in " + name) + (" ? " + name) + ("['default'] : " + name) + ");");
+			}
+
+			return statement;
 		}).join( '\n' );
 
 		if ( importBlock ) {
@@ -1429,88 +1465,39 @@
 		return packageResult( body, options, 'toCjs', true );
 	}
 
-	var builders_strictMode_umd__introTemplate;
-
 	function builders_strictMode_umd__umd ( bundle, body, options ) {
-		var defaultsBlock,
-			entry = bundle.entryModule,
-			importPaths,
-			importNames,
-			amdDeps,
-			cjsDeps,
-			globals,
-			names,
-			intro,
-			indentStr;
-
-		indentStr = body.getIndentString();
-
 		if ( !options || !options.name ) {
 			throw new Error( 'You must specify an export name, e.g. `bundle.toUmd({ name: "myModule" })`' );
 		}
 
-		defaultsBlock = bundle.externalModules.map( function(x ) {
-			var name = bundle.uniqueNames[ x.id ];
-			return indentStr + (("var " + name) + ("__default = ('default' in " + name) + (" ? " + name) + ("['default'] : " + name) + ");");
-		}).join( '\n' );
+		var entry = bundle.entryModule;
+		var indentStr = body.getIndentString();
 
-		if ( defaultsBlock ) {
-			body.prepend( defaultsBlock + '\n\n' );
-		}
+		var importPaths = bundle.externalModules.map( getId );
+		var importNames = importPaths.map( function(path ) {return bundle.uniqueNames[ path ]} );
 
-		importPaths = bundle.externalModules.map( getId );
-		importNames = bundle.externalModules.map( function(m ) {return bundle.uniqueNames[ m.id ]} );
+		var intro = strictUmdIntro({
+			hasImports: bundle.externalModules.length > 0,
+			hasExports: entry.exports.length > 0,
 
-		if ( entry.exports.length ) {
-			amdDeps = [ 'exports' ].concat( importPaths ).map( quote ).join( ', ' );
-			cjsDeps = [ 'exports' ].concat( importPaths.map( req ) ).join( ', ' );
-			globals = [ options.name ].concat( importNames ).map( globalify ).join( ', ' );
-			names   = [ 'exports' ].concat( importNames ).join( ', ' );
+			importPaths: importPaths,
+			importNames: importNames,
+			externalDefaults: getExternalDefaults( bundle ),
 
-			if ( entry.defaultExport ) {
-				body.append( '\n\n' + getExportBlock( entry, indentStr ) );
-			}
-		} else {
-			amdDeps = importPaths.map( quote ).join( ', ' );
-			cjsDeps = importPaths.map( req ).join( ', ' );
-			globals = importNames.map( globalify ).join( ', ' );
-			names   = importNames.join( ', ' );
-		}
-
-		intro = builders_strictMode_umd__introTemplate({
-			amdDeps: amdDeps,
-			cjsDeps: cjsDeps,
-			globals: globals,
-			amdName: options.amdName ? (("'" + (options.amdName)) + "', ") : '',
-			names: names,
+			amdName: options.amdName,
 			name: options.name
-		}).replace( /\t/g, indentStr );
+		}, indentStr );
 
-		body.prepend( intro ).trim().append( '\n\n}));' );
+		body.prepend( intro ).trim();
+
+		if ( entry.exports.length && entry.defaultExport ) {
+			body.append( '\n\n' + getExportBlock( entry, indentStr ) );
+		}
+
+		body.append('\n\n}));');
+
 		return packageResult( body, options, 'toUmd', true );
 	}
-
-	builders_strictMode_umd__introTemplate = template( ("(function (global, factory) {\
-\n\
-\n	'use strict';\
-\n\
-\n	if (typeof define === 'function' && define.amd) {\
-\n		// export as AMD\
-\n		define(<%= amdName %>[<%= amdDeps %>], factory);\
-\n	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {\
-\n		// node/browserify\
-\n		factory(<%= cjsDeps %>);\
-\n	} else {\
-\n		// browser global\
-\n		global.<%= name %> = {};\
-\n		factory(<%= globals %>);\
-\n	}\
-\n\
-\n}(typeof window !== 'undefined' ? window : this, function (<%= names %>) {\
-\n\
-\n	'use strict';\
-\n\
-\n") );
 
 	var builders_strictMode = {
 		amd: builders_strictMode_amd__amd,
