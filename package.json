@@ -2,9 +2,10 @@
   "name": "esperanto-demo",
   "version": "0.1.0",
   "dependencies": {
-    "esperanto": "^0.5.7"
+    "esperanto": "^0.5.10"
   },
   "devDependencies": {
+    "gobble": "^0.7.1",
     "gobble-amdclean": "^0.1.0",
     "gobble-cli": "^0.3.4",
     "gobble-concat": "^0.3.0",
