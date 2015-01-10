@@ -1,23 +1,239 @@
 (function (global, factory) {
+	typeof define === 'function' && define.amd ? define(['vlq'], factory) :
+	typeof exports === 'object' ? module.exports = factory(require('vlq')) :
+	global.MagicString = factory(global.vlq)
+}(this, function (vlq__default) { 'use strict';
 
-	'use strict';
+	var _btoa;
 
-	if (typeof define === 'function' && define.amd) {
-		// export as AMD
-		define(['vlq'], factory);
-	} else if (typeof module !== 'undefined' && module.exports && typeof require === 'function') {
-		// node/browserify
-		module.exports = factory(require('vlq'));
+	if ( typeof window !== 'undefined' && typeof window.btoa === 'function' ) {
+		_btoa = window.btoa;
+	} else if ( typeof Buffer === 'function' ) {
+		_btoa = function ( str ) {
+			return new Buffer( str ).toString( 'base64' );
+		};
 	} else {
-		// browser global
-		global.MagicString = factory(global.vlq);
+		throw new Error( 'Unsupported environment' );
 	}
 
-}(typeof window !== 'undefined' ? window : this, function (vlq__default) {
+	var btoa = _btoa;
 
-	'use strict';
+	var SourceMap = function ( properties ) {
+		this.version = 3;
 
-	function guess_indent__guessIndent ( code ) {
+		this.file           = properties.file;
+		this.sources        = properties.sources;
+		this.sourcesContent = properties.sourcesContent;
+		this.names          = properties.names;
+		this.mappings       = properties.mappings;
+	};
+
+	SourceMap.prototype = {
+		toString: function () {
+			return JSON.stringify( this );
+		},
+
+		toUrl: function () {
+			return 'data:application/json;charset=utf-8;base64,' + btoa( this.toString() );
+		}
+	};
+
+	function getRelativePath ( from, to ) {
+		var fromParts, toParts, i;
+
+		fromParts = from.split( '/' );
+		toParts = to.split( '/' );
+
+		fromParts.pop(); // get dirname
+
+		while ( fromParts[0] === toParts[0] ) {
+			fromParts.shift();
+			toParts.shift();
+		}
+
+		if ( fromParts.length ) {
+			i = fromParts.length;
+			while ( i-- ) fromParts[i] = '..';
+		}
+
+		return fromParts.concat( toParts ).join( '/' );
+	}
+
+	var Bundle = function ( options ) {
+		options = options || {};
+
+		this.intro = options.intro || '';
+		this.outro = options.outro || '';
+		this.separator = 'separator' in options ? options.separator : '\n';
+
+		this.sources = [];
+	};
+
+	Bundle.prototype = {
+		addSource: function ( source ) {
+			if ( typeof source !== 'object' || !source.content ) {
+				throw new Error( 'bundle.addSource() takes an object with a `content` property, which should be an instance of MagicString, and an optional `filename`' );
+			}
+
+			this.sources.push( source );
+			return this;
+		},
+
+		append: function ( str ) {
+			this.outro += str;
+			return this;
+		},
+
+		clone: function () {
+			var bundle = new Bundle({
+				intro: this.intro,
+				outro: this.outro,
+				separator: this.separator
+			});
+
+			this.sources.forEach( function ( source ) {
+				bundle.addSource({
+					filename: source.filename,
+					content: source.content.clone()
+				});
+			});
+
+			return bundle;
+		},
+
+		generateMap: function ( options ) {
+			var offsets = {}, encoded, encodingSeparator;
+
+			encodingSeparator = getSemis( this.separator );
+
+			encoded = (
+				getSemis( this.intro ) +
+				this.sources.map( function ( source, sourceIndex) {
+					return source.content.getMappings( options.hires, sourceIndex, offsets );
+				}).join( encodingSeparator ) +
+				getSemis( this.outro )
+			);
+
+			return new SourceMap({
+				file: options.file.split( '/' ).pop(),
+				sources: this.sources.map( function ( source ) {
+					return getRelativePath( options.file, source.filename );
+				}),
+				sourcesContent: this.sources.map( function ( source ) {
+					return options.includeContent ? source.content.original : null;
+				}),
+				names: [],
+				mappings: encoded
+			});
+		},
+
+		getIndentString: function () {
+			var indentStringCounts = {};
+
+			this.sources.forEach( function ( source ) {
+				var indentStr = source.content.indentStr;
+
+				if ( indentStr === null ) return;
+
+				if ( !indentStringCounts[ indentStr ] ) indentStringCounts[ indentStr ] = 0;
+				indentStringCounts[ indentStr ] += 1;
+			});
+
+			return ( Object.keys( indentStringCounts ).sort( function ( a, b ) {
+				return indentStringCounts[a] - indentStringCounts[b];
+			})[0] ) || '\t';
+		},
+
+		indent: function ( indentStr ) {
+			if ( !indentStr ) {
+				indentStr = this.getIndentString();
+			}
+
+			this.sources.forEach( function ( source ) {
+				source.content.indent( indentStr, { exclude: source.indentExclusionRanges });
+			});
+
+			this.intro = this.intro.replace( /^[^\n]/gm, indentStr + '$&' );
+			this.outro = this.outro.replace( /^[^\n]/gm, indentStr + '$&' );
+
+			return this;
+		},
+
+		prepend: function ( str ) {
+			this.intro = str + this.intro;
+			return this;
+		},
+
+		toString: function () {
+			return this.intro + this.sources.map( stringify ).join( this.separator ) + this.outro;
+		},
+
+		trimLines: function () {
+			return this.trim('[\\r\\n]');
+		},
+
+		trim: function (charType) {
+			return this.trimStart(charType).trimEnd(charType);
+		},
+
+		trimStart: function (charType) {
+			var rx = new RegExp('^' + (charType || '\\s') + '+');
+			this.intro = this.intro.replace( rx, '' );
+
+			if ( !this.intro ) {
+				var source;
+				var i = 0;
+				do {
+					source = this.sources[i];
+
+					if ( !source ) {
+						this.outro = this.outro.replace( rx, '' );
+						break;
+					}
+
+					source.content.trimStart();
+					i += 1;
+				} while ( source.content.str === '' );
+			}
+
+			return this;
+		},
+
+		trimEnd: function(charType) {
+			var rx = new RegExp((charType || '\\s') + '+$');
+			this.outro = this.outro.replace( rx, '' );
+
+			if ( !this.outro ) {
+				var source;
+				var i = this.sources.length - 1;
+				do {
+					source = this.sources[i];
+
+					if ( !source ) {
+						this.intro = this.intro.replace( rx, '' );
+						break;
+					}
+
+					source.content.trimEnd(charType);
+					i -= 1;
+				} while ( source.content.str === '' );
+			}
+
+			return this;
+		}
+	};
+
+
+
+	function stringify ( source ) {
+		return source.content.toString();
+	}
+
+	function getSemis ( str ) {
+		return new Array( str.split( '\n' ).length ).join( ';' );
+	}
+
+	function guessIndent ( code ) {
 		var lines, tabbed, spaced, min;
 
 		lines = code.split( '\n' );
@@ -27,8 +243,12 @@
 		});
 
 		spaced = lines.filter( function ( line ) {
-			return /^ +/.test( line );
+			return /^ {2,}/.test( line );
 		});
+
+		if ( tabbed.length === 0 && spaced.length === 0 ) {
+			return null;
+		}
 
 		// More lines tabbed than spaced? Assume tabs, and
 		// default to tabs in the case of a tie (or nothing
@@ -45,17 +265,15 @@
 
 		return new Array( min + 1 ).join( ' ' );
 	}
-	var guess_indent__default = guess_indent__guessIndent;
 
-	function encode_mappings__encodeMappings ( original, str, mappings, hires ) {
+	function encodeMappings ( original, str, mappings, hires, sourceIndex, offsets ) {
 		var lineStart,
 			locations,
 			lines,
 			encoded,
 			inverseMappings,
 			charOffset = 0,
-			sourceCodeLine,
-			sourceCodeColumn;
+			firstSegment = true;
 
 		// store locations, for fast lookup
 		lineStart = 0;
@@ -66,10 +284,10 @@
 			return start;
 		});
 
-		inverseMappings = encode_mappings__invert( str, mappings );
+		inverseMappings = invert( str, mappings );
 
-		lines = str.split( '\n' ).map( function ( line, lineIndex ) {
-			var segments, segment, len, char, origin, lastOrigin, i, sourceCodeLine, sourceCodeColumn, location;
+		lines = str.split( '\n' ).map( function ( line ) {
+			var segments, len, char, origin, lastOrigin, i, location;
 
 			segments = [];
 
@@ -78,12 +296,13 @@
 				char = i + charOffset;
 				origin = inverseMappings[ char ];
 
-				if ( origin === -1 ) {
-					if ( lastOrigin === -1 ) {
+				if ( !~origin ) {
+					if ( !~lastOrigin ) {
 						// do nothing
 					} else {
 						segments.push({
 							generatedCodeColumn: i,
+							sourceIndex: sourceIndex,
 							sourceCodeLine: 0,
 							sourceCodeColumn: 0
 						});
@@ -94,10 +313,11 @@
 					if ( !hires && ( origin === lastOrigin + 1 ) ) {
 						// do nothing
 					} else {
-						location = encode_mappings__getLocation( locations, origin );
+						location = getLocation( locations, origin );
 
 						segments.push({
 							generatedCodeColumn: i,
+							sourceIndex: sourceIndex,
 							sourceCodeLine: location.line,
 							sourceCodeColumn: location.column
 						});
@@ -111,8 +331,11 @@
 			return segments;
 		});
 
-		sourceCodeLine = 0;
-		sourceCodeColumn = 0;
+		offsets = offsets || {};
+
+		offsets.sourceIndex = offsets.sourceIndex || 0;
+		offsets.sourceCodeLine = offsets.sourceCodeLine || 0;
+		offsets.sourceCodeColumn = offsets.sourceCodeColumn || 0;
 
 		encoded = lines.map( function ( segments ) {
 			var generatedCodeColumn = 0;
@@ -120,14 +343,17 @@
 			return segments.map( function ( segment ) {
 				var arr = [
 					segment.generatedCodeColumn - generatedCodeColumn,
-					0,
-					segment.sourceCodeLine - sourceCodeLine,
-					segment.sourceCodeColumn - sourceCodeColumn
+					segment.sourceIndex - offsets.sourceIndex,
+					segment.sourceCodeLine - offsets.sourceCodeLine,
+					segment.sourceCodeColumn - offsets.sourceCodeColumn
 				];
 
 				generatedCodeColumn = segment.generatedCodeColumn;
-				sourceCodeLine = segment.sourceCodeLine;
-				sourceCodeColumn = segment.sourceCodeColumn;
+				offsets.sourceIndex = segment.sourceIndex;
+				offsets.sourceCodeLine = segment.sourceCodeLine;
+				offsets.sourceCodeColumn = segment.sourceCodeColumn;
+
+				firstSegment = false;
 
 				return vlq__default.encode( arr );
 			}).join( ',' );
@@ -135,10 +361,9 @@
 
 		return encoded;
 	}
-	var encode_mappings__default = encode_mappings__encodeMappings;
 
 
-	function encode_mappings__invert ( str, mappings ) {
+	function invert ( str, mappings ) {
 		var inverted = new Uint32Array( str.length ), i;
 
 		// initialise everything to -1
@@ -158,8 +383,8 @@
 		return inverted;
 	}
 
-	function encode_mappings__getLocation ( locations, char ) {
-		var i, len = locations.length;
+	function getLocation ( locations, char ) {
+		var i;
 
 		i = locations.length;
 		while ( i-- ) {
@@ -174,14 +399,14 @@
 		throw new Error( 'Character out of bounds' );
 	}
 
-	var magic_string__MagicString = function ( string ) {
+	var MagicString = function ( string ) {
 		this.original = this.str = string;
-		this.mappings = magic_string__initMappings( string.length );
+		this.mappings = initMappings( string.length );
 
-		this.indentStr = guess_indent__default( string );
+		this.indentStr = guessIndent( string );
 	};
 
-	magic_string__MagicString.prototype = {
+	MagicString.prototype = {
 		append: function ( content ) {
 			this.str += content;
 			return this;
@@ -190,7 +415,7 @@
 		clone: function () {
 			var clone, i;
 
-			clone = new magic_string__MagicString( this.original );
+			clone = new MagicString( this.original );
 			clone.str = this.str;
 
 			i = clone.mappings.length;
@@ -202,47 +427,43 @@
 		},
 
 		generateMap: function ( options ) {
-			var map, encoded;
-
 			options = options || {};
 
-			encoded = encode_mappings__default( this.original, this.str, this.mappings, options.hires );
-
-			map = {
-				version: 3,
-				file: options.file,
-				sources: [ options.source ],
-				sourcesContent: options.includeContent ? [ this.original ] : [],
+			return new SourceMap({
+				file: ( options.file ? options.file.split( '/' ).pop() : null ),
+				sources: [ options.source ? getRelativePath( options.file || '', options.source ) : null ],
+				sourcesContent: options.includeContent ? [ this.original ] : [ null ],
 				names: [],
-				mappings: encoded
-			};
-
-			Object.defineProperty( map, 'toString', {
-				enumerable: false,
-				value: function () {
-					return JSON.stringify( map );
-				}
+				mappings: this.getMappings( options.hires, 0 )
 			});
+		},
 
-			return map;
+		getIndentString: function () {
+			return this.indentStr === null ? '\t' : this.indentStr;
+		},
+
+		getMappings: function ( hires, sourceIndex, offsets ) {
+			return encodeMappings( this.original, this.str, this.mappings, hires, sourceIndex, offsets );
 		},
 
 		indent: function ( indentStr, options ) {
 			var self = this,
 				mappings = this.mappings,
-				pattern = /\n/g,
+				reverseMappings = reverse( mappings, this.str.length ),
+				pattern = /^[^\n]/gm,
 				match,
-				inserts = [ 0 ],
-				i,
+				inserts = [],
+				adjustments,
 				exclusions,
-				lastEnd;
+				lastEnd,
+				i;
 
 			if ( typeof indentStr === 'object' ) {
 				options = indentStr;
 				indentStr = undefined;
 			}
 
-			indentStr = indentStr !== undefined ? indentStr : this.indentStr;
+			indentStr = indentStr !== undefined ? indentStr : ( this.indentStr || '\t' );
 
 			options = options || {};
 
@@ -280,31 +501,38 @@
 
 			if ( !exclusions ) {
 				while ( match = pattern.exec( this.str ) ) {
-					inserts.push( match.index + 1 );
+					inserts.push( match.index );
 				}
 
-				this.str = indentStr + this.str.replace( pattern, '\n' + indentStr );
+				this.str = this.str.replace( pattern, indentStr + '$&' );
 			} else {
 				while ( match = pattern.exec( this.str ) ) {
-					if ( !isExcluded( match.index ) ) {
-						inserts.push( match.index + 1 );
+					if ( !isExcluded( match.index - 1 ) ) {
+						inserts.push( match.index );
 					}
 				}
 
-				this.str = indentStr + this.str.replace( pattern, function ( match, index ) {
-					return isExcluded( index ) ? match : '\n' + indentStr;
+				this.str = this.str.replace( pattern, function ( match, index ) {
+					return isExcluded( index - 1 ) ? match : indentStr + match;
 				});
 			}
 
-			inserts.forEach( function ( index, i ) {
+			adjustments = inserts.map( function ( index ) {
 				var origin;
 
 				do {
-					origin = self.locateOrigin( index++ );
-				} while ( origin == null && index < self.str.length );
+					origin = reverseMappings[ index++ ];
+				} while ( !~origin && index < self.str.length );
 
-				magic_string__adjust( mappings, origin, indentStr.length );
+				return origin;
 			});
+
+			i = adjustments.length;
+			lastEnd = this.mappings.length;
+			while ( i-- ) {
+				adjust( self.mappings, adjustments[i], lastEnd, ( ( i + 1 ) * indentStr.length ) );
+				lastEnd = adjustments[i];
+			}
 
 			return this;
 
@@ -323,6 +551,18 @@
 					}
 				}
 			}
+		},
+
+		insert: function ( index, content ) {
+			if ( index === 0 ) {
+				this.prepend( content );
+			} else if ( index === this.original.length ) {
+				this.append( content );
+			} else {
+				this.replace( index, index, content );
+			}
+
+			return this;
 		},
 
 		// get current location of character in original string
@@ -356,7 +596,7 @@
 
 		prepend: function ( content ) {
 			this.str = content + this.str;
-			magic_string__adjust( this.mappings, 0, content.length );
+			adjust( this.mappings, 0, this.mappings.length, content.length );
 			return this;
 		},
 
@@ -366,7 +606,7 @@
 		},
 
 		replace: function ( start, end, content ) {
-			var i, len, firstChar, lastChar, d;
+			var firstChar, lastChar, d;
 
 			firstChar = this.locate( start );
 			lastChar = this.locate( end - 1 );
@@ -379,8 +619,8 @@
 
 			d = content.length - ( lastChar + 1 - firstChar );
 
-			magic_string__blank( this.mappings, start, end );
-			magic_string__adjust( this.mappings, end, d );
+			blank( this.mappings, start, end );
+			adjust( this.mappings, end, this.mappings.length, d );
 			return this;
 		},
 
@@ -401,57 +641,78 @@
 			return this.str;
 		},
 
-		trim: function () {
+		trimLines: function() {
+			return this.trim('[\\r\\n]');
+		},
+
+		trim: function (charType) {
+			return this.trimStart(charType).trimEnd(charType);
+		},
+
+		trimEnd: function (charType) {
 			var self = this;
+			var rx = new RegExp((charType || '\\s') + '+$');
 
-			this.str = this.str
-				.replace( /^\s+/, function ( leading ) {
-					var length = leading.length, i, chars = [], adjustmentStart = 0;
+			this.str = this.str.replace( rx, function ( trailing, index, str ) {
+				var strLength = str.length,
+					length = trailing.length,
+					i,
+					chars = [];
 
-					i = length;
-					while ( i-- ) {
-						chars.push( self.locateOrigin( i ) );
+				i = strLength;
+				while ( i-- > strLength - length ) {
+					chars.push( self.locateOrigin( i ) );
+				}
+
+				i = chars.length;
+				while ( i-- ) {
+					if ( chars[i] !== null ) {
+						self.mappings[ chars[i] ] = -1;
 					}
+				}
 
-					i = chars.length;
-					while ( i-- ) {
-						if ( chars[i] !== null ) {
-							self.mappings[ chars[i] ] = -1;
-							adjustmentStart += 1;
-						}
+				return '';
+			});
+
+			return this;
+		},
+
+		trimStart: function (charType) {
+			var self = this;
+			var rx = new RegExp('^' + (charType || '\\s') + '+');
+
+			this.str = this.str.replace( rx, function ( leading ) {
+				var length = leading.length, i, chars = [], adjustmentStart = 0;
+
+				i = length;
+				while ( i-- ) {
+					chars.push( self.locateOrigin( i ) );
+				}
+
+				i = chars.length;
+				while ( i-- ) {
+					if ( chars[i] !== null ) {
+						self.mappings[ chars[i] ] = -1;
+						adjustmentStart += 1;
 					}
+				}
 
-					magic_string__adjust( self.mappings, adjustmentStart, -length );
+				adjust( self.mappings, adjustmentStart, self.mappings.length, -length );
 
-					return '';
-				})
-				.replace( /\s+$/, function ( trailing, index, str ) {
-					var strLength = str.length,
-						length = trailing.length,
-						i,
-						chars = [];
-
-					i = strLength;
-					while ( i-- > strLength - length ) {
-						chars.push( self.locateOrigin( i ) );
-					}
-
-					i = chars.length;
-					while ( i-- ) {
-						if ( chars[i] !== null ) {
-							self.mappings[ chars[i] ] = -1;
-						}
-					}
-
-					return '';
-				});
+				return '';
+			});
 
 			return this;
 		}
 	};
 
-	function magic_string__adjust ( mappings, start, d ) {
-		var i = mappings.length;
+	MagicString.Bundle = Bundle;
+
+	function adjust ( mappings, start, end, d ) {
+		var i = end;
+
+		if ( !d ) return; // replacement is same length as replaced string
+
 		while ( i-- > start ) {
 			if ( ~mappings[i] ) {
 				mappings[i] += d;
@@ -459,7 +720,7 @@
 		}
 	}
 
-	function magic_string__initMappings ( i ) {
+	function initMappings ( i ) {
 		var mappings = new Uint32Array( i );
 
 		while ( i-- ) {
@@ -469,14 +730,36 @@
 		return mappings;
 	}
 
-	function magic_string__blank ( mappings, start, i ) {
+	function blank ( mappings, start, i ) {
 		while ( i-- > start ) {
 			mappings[i] = -1;
 		}
 	}
 
-	var magic_string__default = magic_string__MagicString;
+	function reverse ( mappings, i ) {
+		var result, location;
 
-	return magic_string__default;
+		result = new Uint32Array( i );
+
+		while ( i-- ) {
+			result[i] = -1;
+		}
+
+		i = mappings.length;
+		while ( i-- ) {
+			location = mappings[i];
+
+			if ( ~location ) {
+				result[ location ] = i;
+			}
+		}
+
+		return result;
+	}
+
+	var index = MagicString;
+
+	return index;
 
 }));
+//# sourceMappingURL=./magic-string.js.map
