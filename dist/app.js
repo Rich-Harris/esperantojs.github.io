@@ -16,7 +16,7 @@
   	};
 
   	__import0____component.exports = {
-  		init: function () {
+  		onrender: function () {
   			var component = this, mode, editor, doc, updating;
 
   			mode = this.get( 'mode' );
@@ -133,7 +133,7 @@
   	app__component.exports = {
   		debug: true,
 
-  		init: function () {
+  		oninit: function () {
   			this.observe( 'selected', function ( sample ) {
   				this.set( 'input', sample.code );
   			});
