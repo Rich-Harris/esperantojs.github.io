@@ -5,28 +5,17 @@ gobble.cwd( __dirname );
 src = gobble( 'src' );
 
 root = gobble( 'src/root' );
-app = gobble( 'src/ractive_components' ).map( 'ractive' );
+app = gobble( 'src/ractive_components' ).map( 'ractive', { type: 'es6' });
 bundle = gobble( 'src/bundle' ).transform( 'concat', { files: '**/*.js', dest: 'bundle.js' });
 css = gobble( 'src/scss' ).transform( 'sass', { src: 'main.scss', dest: 'min.css' });
 lib = gobble( 'node_modules/esperanto/dist', { static: true }).include( 'esperanto.browser.*' );
 
 // Compile the app.html file
-data = gobble( 'src/data' ).transform( 'spelunk', { dest: 'data.js', type: 'amd' });
-vendor = gobble( 'src/vendor', { static: true });
-app = gobble([ app, data, vendor ]).transform( 'requirejs', {
-	name: 'app',
-	out: 'app.js',
-	paths: {
-		acorn: 'empty:',
-		esperanto: 'empty:',
-		ractive: 'ractive/ractive-legacy'
-	},
-	optimize: 'none'
-}).map( 'amdclean', {
-	wrap: {
-		start: 'var App = (function () {',
-		end: 'return app;}());'
-	}
+data = gobble( 'src/data' ).transform( 'spelunk', { dest: 'data.js', type: 'es6' });
+app = gobble([ app, data ]).transform( 'esperanto-bundle', {
+	name: 'App',
+	entry: 'app.js',
+	type: 'umd'
 });
 
 // Uglify for production
