@@ -113,7 +113,7 @@
 	component.exports = {
 		debug: true,
 
-		init: function () {
+		oninit: function () {
 			this.observe( 'selected', function ( sample ) {
 				this.set( 'input', sample.code );
 			});
