@@ -1,39 +1,68 @@
-var gobble = require( 'gobble' ),
-	src, root, app, bundle, css, data, lib, vendor;
+var gobble = require( 'gobble' );
 
 gobble.cwd( __dirname );
-src = gobble( 'src' );
 
-root = gobble( 'src/root' );
-app = gobble( 'src/ractive_components' ).map( 'ractive' );
-bundle = gobble( 'src/bundle' ).transform( 'concat', { files: '**/*.js', dest: 'bundle.js' });
-css = gobble( 'src/scss' ).transform( 'sass', { src: 'main.scss', dest: 'min.css' });
-lib = gobble( 'node_modules/esperanto/dist', { static: true }).include( 'esperanto.browser.*' );
+var node_modules = gobble( 'node_modules', { static: true });
 
-// Compile the app.html file
-data = gobble( 'src/data' ).transform( 'spelunk', { dest: 'data.js', type: 'amd' });
-vendor = gobble( 'src/vendor', { static: true });
-app = gobble([ app, data, vendor ]).transform( 'requirejs', {
-	name: 'app',
-	out: 'app.js',
-	paths: {
-		acorn: 'empty:',
-		esperanto: 'empty:',
-		ractive: 'ractive/ractive-legacy'
-	},
-	optimize: 'none'
-}).map( 'amdclean', {
-	wrap: {
-		start: 'var App = (function () {',
-		end: 'return app;}());'
-	}
-});
+var bundle = node_modules
+	.transform( 'concat', {
+		dest: 'bundle.js',
+		files: [
+			'codemirror/lib/codemirror.js',
+			'codemirror/mode/javascript/javascript.js',
+			'acorn/dist/acorn.js'
+		]
+	});
+
+var root = gobble( 'src/root' );
+
+var app = gobble([
+	gobble( 'src/app' )
+		.transform( 'ractive', {
+			type: 'es6',
+			sourceMap: true
+		})
+		.transform( 'babel', {
+			whitelist: [
+				'es6.arrowFunctions',
+				'es6.blockScoping',
+				'es6.classes',
+				'es6.constants',
+				'es6.destructuring',
+				'es6.parameters.default',
+				'es6.parameters.rest',
+				'es6.properties.shorthand',
+				'es6.spread',
+				'es6.templateLiterals'
+			],
+			inputSourceMap: false
+		}),
+	gobble( 'src/data' ).transform( 'spelunk', { dest: 'data.js', type: 'es6' })
+])
+	.transform( 'esperanto-bundle', {
+		entry: 'main',
+		type: 'cjs',
+		sourceMap: true
+	})
+	.transform( 'derequire' )
+	.transform( 'browserify', {
+		entries: [ './main' ],
+		dest: 'main.js',
+		debug: true,
+		standalone: 'main'
+	});
+
+var css = gobble( 'src/scss' ).transform( 'sass', { src: 'main.scss', dest: 'min.css' });
+var lib = node_modules.grab( 'esperanto/dist' ).include( 'esperanto.browser.*' );
 
 // Uglify for production
-if ( gobble.isBuild ) {
-	app = app.map( 'uglifyjs' );
-	bundle = bundle.map( 'uglifyjs' );
-	lib = lib.map( 'uglifyjs' );
+if ( gobble.env() === 'production' ) {
+	app = app.transform( 'uglifyjs' );
+	bundle = bundle.transform( 'uglifyjs' );
+	//lib = lib.transform( 'uglifyjs' );
 }
 
-module.exports = gobble([ root, app, bundle, css, lib, 'src/files' ]);
+app = app.transform( 'sorcery' );
+bundle = bundle.transform( 'sorcery' );
+
+module.exports = gobble([ root, css, app, bundle, lib ]);

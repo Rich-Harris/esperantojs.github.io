@@ -1,0 +1,52 @@
+<div class='codemirror-container' style='{{#height}}height: {{height}};{{/height}}'>
+	<textarea></textarea>
+</div>
+
+<script>
+	component.exports = {
+		onrender () {
+			var component = this, mode, editor, doc, updating;
+
+			mode = this.get( 'mode' );
+
+			if ( mode === 'json' ) {
+				mode = {
+					name: 'javascript',
+					json: true
+				};
+			}
+
+			editor = CodeMirror.fromTextArea( this.find( 'textarea' ), {
+				mode,
+				theme: this.get( 'theme' ) || 'neo',
+				lineWrapping: this.get( 'wrap' ),
+				readOnly: this.get( 'readonly' )
+			});
+			doc = editor.getDoc();
+
+			editor.on( 'change', () => {
+				if ( updating || this.get( 'readonly' ) ) {
+					return;
+				}
+
+				updating = true;
+				component.set( 'value', editor.getValue() );
+				updating = false;
+			});
+
+			this.observe( 'value', value => {
+				if ( updating ) {
+					return;
+				}
+
+				updating = true;
+				editor.setValue( value || '' );
+				updating = false;
+			});
+
+			this.on( 'teardown', () => editor.toTextArea() );
+		},
+
+		isolated: true
+	};
+</script>

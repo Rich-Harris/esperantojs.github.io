@@ -1,0 +1,13 @@
+{
+	"esnext": true,
+	"undef": true,
+	"unused": true,
+	"globals": {
+		"component": true,
+		"require": true,
+		"CodeMirror": true,
+		"esperanto": true,
+		"setTimeout": true,
+		"document": true
+	}
+}

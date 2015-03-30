@@ -8,7 +8,7 @@ Clone the repo and `npm install` its dependencies. Then...
 
 ```bash
 # build and serve a development version of the site
-npm run serve
+npm start
 
 # build the site to `dist`
 npm run build

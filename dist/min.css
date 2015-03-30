@@ -576,7 +576,7 @@ div.CodeMirror-cursors {
 
 /* Used to force a border model for a node */
 .cm-force-border {
-  padding-right: 0.1px; }
+  padding-right: .1px; }
 
 @media print {
   /* Hide the cursor when printing */
@@ -637,3 +637,5 @@ div.CodeMirror-cursors {
   height: 100%;
   font-family: 'Inconsolata', monospace;
   background-color: transparent !important; }
+
+/*# sourceMappingURL=../../min.css.map */

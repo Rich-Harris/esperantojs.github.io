@@ -2,21 +2,30 @@
   "name": "esperanto-demo",
   "version": "0.1.0",
   "dependencies": {
-    "esperanto": "^0.5.10"
+    "acorn": "^1.0.1",
+    "codemirror": "^5.1.0",
+    "esperanto": "^0.6.24",
+    "ractive": "^0.7.1"
   },
   "devDependencies": {
-    "gobble": "^0.7.1",
+    "gobble": "^0.7.9",
     "gobble-amdclean": "^0.1.0",
+    "gobble-babel": "^4.0.1",
+    "gobble-browserify": "^0.2.0",
     "gobble-cli": "^0.3.4",
     "gobble-concat": "^0.3.0",
-    "gobble-ractive": "^0.1.0",
+    "gobble-derequire": "^0.1.1",
+    "gobble-esperanto-bundle": "^0.1.7",
+    "gobble-ractive": "^0.2.0",
     "gobble-requirejs": "^0.3.1",
-    "gobble-sass": "~0.1.0",
-    "gobble-spelunk": "^0.4.0"
+    "gobble-sass": "^0.4.0",
+    "gobble-sorcery": "^0.2.5",
+    "gobble-spelunk": "^0.4.0",
+    "gobble-uglifyjs": "^0.2.1"
   },
   "scripts": {
     "deploy": "./scripts/deploy.sh",
-    "serve": "gobble",
+    "start": "gobble",
     "build": "rm -rf dist; gobble build dist"
   }
 }
