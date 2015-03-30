@@ -144,7 +144,7 @@
 					// it should NOT be forced, as `strict: false` succeeded
 					setTimeout( () => {
 						self.set( 'forceStrictMode', false );
-					});
+					}, 1000 );
 				} catch ( err ) {
 					// it SHOULD be forced, as `strict: false` failed
 					setTimeout( () => {

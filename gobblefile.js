@@ -59,7 +59,6 @@ var lib = node_modules.grab( 'esperanto/dist' ).include( 'esperanto.browser.*' )
 if ( gobble.env() === 'production' ) {
 	app = app.transform( 'uglifyjs' );
 	bundle = bundle.transform( 'uglifyjs' );
-	//lib = lib.transform( 'uglifyjs' );
 }
 
 app = app.transform( 'sorcery' );

@@ -9,7 +9,6 @@
   },
   "devDependencies": {
     "gobble": "^0.7.9",
-    "gobble-amdclean": "^0.1.0",
     "gobble-babel": "^4.0.1",
     "gobble-browserify": "^0.2.0",
     "gobble-cli": "^0.3.4",
@@ -17,7 +16,6 @@
     "gobble-derequire": "^0.1.1",
     "gobble-esperanto-bundle": "^0.1.7",
     "gobble-ractive": "^0.2.0",
-    "gobble-requirejs": "^0.3.1",
     "gobble-sass": "^0.4.0",
     "gobble-sorcery": "^0.2.5",
     "gobble-spelunk": "^0.4.0",
